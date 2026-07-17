@@ -1,0 +1,190 @@
+# 🧠 CONTEXTO COMPLETO — Projeto SW Tune Lab (cole isto no início de uma nova conversa com IA)
+
+> **Como usar:** cole TODO o conteúdo deste arquivo como primeira mensagem de uma nova conversa,
+> anexe (ou disponibilize) os arquivos listados na seção 1 e diga o que quer fazer.
+> A IA não precisará re-inspecionar o JSON nem o app do zero — tudo já está mapeado e validado aqui.
+
+---
+
+## 0. Quem é o usuário e como ele trabalha
+
+- Falante de **português (BR)** — responda sempre em PT-BR.
+- Jogador de **Summoners War**, conta **Furland666** (nível 100, servidor/global BR), usa o app web **"SW Tune Lab — Builds RTA"**.
+- Tecnicamente curioso: testa o app ele mesmo e reporta resultados exatos; valoriza **respostas exatas com prova**, não heurísticas.
+- Regras que ele DEFINIU explicitamente (não violar):
+  1. **Grinds:** usar as runas **com os grinds atuais** (sec_eff[1]+sec_eff[3]). NUNCA simular "full grindado".
+  2. **Runas intangíveis contam** para completar sets (ver regra exata na seção 3.4).
+  3. Para perguntas sobre builds existentes: **não simular/calcular fórmulas de capacidade** — apenas buscar o que já está runado na conta.
+
+---
+
+## 1. Arquivos e fontes (estado atual do workspace)
+
+| Arquivo | O que é |
+|---|---|
+| `/home/user/sw-tunelab/TippinStrongly.json` | Export completo da conta (`HubUserLogin`, 6,5 MB). Fonte da verdade. |
+| `/home/user/sw-tunelab/BatemanLatte.html` | O app SW Tune Lab (~5,26 MB, HTML único). **JÁ PATCHEADO** com busca de capacidade EXATA (MILP) — ver seção 5. |
+| `/home/user/sw-tunelab/rta_favoritos_vio_will.md` | Relatório: favoritos RTA com Violent+Will ≥ +160 SPD (8 builds). |
+| `/home/user/sw-tunelab/capacidade_exata_vio_will.md` | Relatório: máximo EXATO de builds simultâneas Vio+Will +160 SPD = **20** (provado). |
+| `/home/user/sw-tunelab/PATCH_CAPACIDADE.md` | Changelog do patch aplicado no app. |
+
+URLs externas (podem expirar — se precisar re-baixar):
+- JSON da conta: `https://paste.c-net.org/TippinStrongly`
+- App (versão ORIGINAL pré-patch, backup): `https://paste.c-net.org/BatemanLatte`
+
+Ambiente: bash com rede (curl OK), Node v20.20.2 em `/usr/bin/node`, Python com `scipy.optimize.milp` (HiGHS, rápido) disponível.
+
+---
+
+## 2. Estrutura do JSON da conta (descobertas validadas)
+
+Export `HubUserLogin`. 2217 runas no total (somando inventário + equipadas nas unidades).
+
+### 2.1 Códigos de stats das runas (pri_eff, prefix_eff, sec_eff — campo [0] = tipo)
+
+| ID | Stat |
+|---|---|
+| 1 | HP flat |
+| 2 | HP% |
+| 3 | ATK flat |
+| 4 | ATK% |
+| 5 | DEF flat |
+| 6 | DEF% |
+| **8** | **SPD** (confirmado: slot 2 pri_eff e subs) |
+| 9 | Taxa Crítica |
+| 10 | Dano Crítico |
+| 11 | Resistência |
+| **12** | **Precisão** (NÃO é SPD — erro clássico na 1ª análise!) |
+
+- **`sec_eff` formato:** `[tipo, valor, gemada(0/1), valor_grind]` — o grind JÁ está aplicado na runa;
+  SPD efetivo de uma sub = `sec[1] + sec[3]`.
+- **SPD total da runa** = `pri_eff[1] se pri_eff[0]==8` + `prefix_eff[1] se prefix_eff[0]==8` + `Σ (se[1]+se[3]) para se onde se[0]==8`.
+
+### 2.2 Elementos (campo `attribute` e sufixo do `unit_master_id`)
+
+**1 = Água, 2 = Fogo, 3 = Vento, 4 = Luz, 5 = Trevas** (Fogo/Água invertidos em relação ao "senso comum" — validado contra screenshot in-game da Fern/Luz).
+
+### 2.3 Nomes de monstros
+
+- `unit_master_id` do export = **com2us_id DESPERTO** (bate direto com SWARFARM).
+- Catálogo base embutido no HTML do app: regex `'"(\d{5,6})":\["([^"\]]+)","unit_icon'` (ex.: `"35712":["Frieren","unit_icon_..."]`).
+- Nome desperto via SWARFARM API: `/api/v2/monsters/?family_id={fam}00&fields=com2us_id,name,element,awaken_level&page_size=50`.
+
+### 2.4 Listas-chave do export
+
+- `favorite_unit_list`: **type=1 → favoritos RTA (37 monstros, 21 com loadout RTA)**; type=2 → outra lista (50).
+- `world_arena_rune_equip_list`: 186 entradas rune_id→occupied_id = **loadouts RTA atuais** (35 unidades).
+- `rune_lock_list`: 208 runas trancadas (25 das 48 runas das 8 builds ≥160 estão trancadas).
+- `world_arena_rune_equip_sync = 1` → o loadout RTA É o equipamento atual do monstro.
+
+### 2.5 Runas Intangíveis (set_id **25**)
+
+- **set_id = 25**, 38 na conta. **Curinga**: completa qualquer set.
+- **Regra exata (validada no código do app):** máx. 1 por monstro; só ativa se houver **exatamente UM set quebrado faltando exatamente UMA peça**. Dois sets quebrados = sem efeito.
+- Notação usada nos relatórios: 🃏
+
+---
+
+## 3. Resultados já obtidos e VALIDADOS (não refazer)
+
+### 3.1 Favoritos RTA com Violent+Will e SPD ≥ +160 → **8 builds**
+
+| Monstro | Elem. | +SPD | Obs. |
+|---|---|---|---|
+| Tetsuya | Fogo | +174 | |
+| Hwoarang | Luz | +173 | |
+| Fern | Luz | +171 | validado contra screenshot in-game (103+171, 4 Vio + 2 Will) ✅ |
+| Josephine | Água | +169 | 🃏 Intangível |
+| Stark | Vento | +165 | 🃏 Intangível |
+| Orphina | Vento | +162 | |
+| Anavel | Água | +160 | |
+| Velajuel | Fogo | +160 | |
+
+Abaixo do corte: Veromos +155, Mei Hou Wang +125, Bolverk +94.
+Detalhes: `rta_favoritos_vio_will.md`.
+
+### 3.2 Capacidade EXATA (quantas builds Vio+Will mín. +160 SPD simultâneas a conta suporta)
+
+- **Resposta exata = 20** (provado por MILP: k=20 factível, k=21 infactível).
+- Prova dupla: `scipy.optimize.milp` (Python) **e** o app patcheado (HiGHS wasm) — ambos deram 20.
+- Composição: 13 builds puro Vio×4+Will×2 · 6 com Intangível completando Violent · 2 completando Will (uma execução do app deu 13/5/2).
+- Pool da Capacidade = **todas as runas da conta** (inclui equipadas e trancadas); stats medidos **só de runas** (`stats.additional`, sem bases do monstro).
+- Detalhes: `capacidade_exata_vio_will.md`.
+
+### 3.3 Resultados que o usuário reportou do app PRÉ-patch (diagnóstico do bug)
+
+Com 8 monstros, Vio+Will min +160:
+- "runar um por vez" (single): achou runas p/ os 8 ✅
+- **"Runar simultaneamente": 0 resultados** ❌ (ainda usa motor heurístico — PENDENTE, ver seção 6)
+- "Capacidade" (heurística beam-search): turbo=1, leve=2, equilibrado=2, completa=2 (muito abaixo do real=20)
+
+---
+
+## 4. Anatomia do app `BatemanLatte.html`
+
+- HTML único ~5,26 MB. HiGHS 1.14.0 (solver MILP, Emscripten wasm) embutido em
+  `<script id="highsJsSource">` e `id="highsWasmSource"`.
+- Modos de profundidade `getDepthConfig()`: turbo/leve/equilibrado/completa
+  (chaves capGeneral/capTarget/capRequired/capLimit/capTopPerSlot; **adicionado pelo patch:** `capMilpSec` = 30/60/120/240s).
+- `capacityQuality` usa `stats.additional` (stats vindos só das runas).
+- Pool: `capacityRunePool(){ return [...allRunes] }` (inclui equipadas + trancadas).
+- Para rodar o HiGHS wasm em Node (testes fora do navegador):
+  `new Function('require','module','exports','__dirname','__filename', src + ';return Module;')(...)`.
+
+---
+
+## 5. PATCH já aplicado no app (busca "Capacidade" EXATA) — seção crítica
+
+### 5.1 O bug original
+
+`runCapacityAnalyzer(){ return runCapacityResponsive(); }` — o botão só chamava a **heurística beam-search**.
+Existia um caminho EXATO por MILP como **código morto**: `runCapacityMILP` + `HIGHS_CAPACITY_WORKER_SOURCE`.
+
+### 5.2 Edições aplicadas (todas validadas)
+
+1. `runCapacityAnalyzer` → tenta `runCapacityMILP()` com **fallback** ao responsive.
+2. `capMilpSec` por modo (turbo 30 / leve 60 / equilibrado 120 / completa 240).
+3. Em `runCapacityMILP`: `runes` filtrado `if(pieceCost===6){ runes=runes.filter(r=>allow.has(set_id)||set_id===25) }`; `milpSec` passado no `postMessage`.
+4. Textos de status: **"Máximo EXATO confirmado"** / **"Mínimo garantido encontrado"**.
+5. `HIGHS_CAPACITY_WORKER_SOURCE` inteiro substituído pelo **worker v3** (ver 5.3).
+
+### 5.3 Arquitetura do worker v3 (referência para manutenção)
+
+Restrições duras do código do worker: **não pode conter backticks nem `${`** (está dentro de `String.raw\`...\``);
+strings LP dentro do template usam `\n` com **uma contrabarra só** (o original tinha `\\n` → LP quebrado).
+
+- **`leanModel(data, B, scoreSpd)`** — modelo de factibilidade de k fixo: só binárias `x(b,i)` (+ cand/w pequenos por set da RULE).
+  - **Fix crítico da linearização do candidato Intangível (estava invertida):**
+    - `count + (7−p)·cand ≤ 6`  (cand=1 ⇒ count = p−1)
+    - `count − (p−1)·cand ≥ 0`
+  - Demais: `Σcand ≤ 1`, `Σw ≤ intan`, `w ≤ cand`, intangível ≤ 1 por build (ou `=1` se 25 for um set da rule),
+    cobertura = 1 por slot, unicidade de runa, quebra de simetria por SPD decrescente, stats min/max (`mn − 0.999`).
+- **`greedyBuilds(data)`** — construção instantânea (só quando: 1 stat alvo, pieceCost===6, nenhuma rule com id 25, ≤400 patterns).
+  DP de gasto mínimo por pattern (CAP 600, Uint8Array). Bug corrigido: serialização `x[0]+':'+x[1]` (antes somava números).
+  Greed puro encontrou 16 builds → serve de lower bound, MILP fecha a prova.
+- **`solveCapacity`** — fluxo: greedy → **busca binária** em tryB (TL do modo) com tratamento de pending/unknown →
+  **escalonamento** TLesc = TL×4 em lb+1 → **passada de prova** TLproof = TL×2 → passada "bonita" (max SPD) →
+  posta `milp_done { status, proven, chosen, theoretical, heuristic }`.
+
+### 5.4 Validação do patch
+
+Harness Node extraindo o worker do próprio HTML: **"RESULTADO: Optimal | UB teórico: 64 | builds: 20 | provado: true"**,
+verificação independente "TODAS VÁLIDAS ✅", SPD das builds 162–163, ~215s com milpSec=60.
+Changelog completo: `PATCH_CAPACIDADE.md`.
+
+---
+
+## 6. PENDÊNCIAS conhecidas
+
+1. **"Runar simultaneamente" (modo multi-monstro)** — ainda usa a heurística antiga (retornou 0 p/ 8 monstros do usuário).
+   Plano já discutido: criar `leanModelMulti` com o mesmo espírito do leanModel — cada build `b` vinculada a UM monstro
+   com suas próprias rules/mins-máx/stats base; B = nº de monstros. **O usuário ainda não confirmou se quer.**
+2. Pastas temporárias de harness/worker foram apagadas — regenerar a partir da seção 5.3 se necessário.
+
+---
+
+## 7. Frase-gatilho para a nova conversa
+
+> "Este é o contexto do meu projeto SW Tune Lab. Os arquivos estão no workspace em /home/user/sw-tunelab/.
+> Tudo que está nas seções 3 e 5 já está validado — não refaça, use como verdade.
+> O que eu quero agora: <sua tarefa>."
