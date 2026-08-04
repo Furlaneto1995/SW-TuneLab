@@ -2936,8 +2936,8 @@ function showArtPop(e,kind,val,r,side,k){
   const clean=t=>String(t||'').replace(/<[^>]+>/g,'').replace(/\s+/g,' ').trim();
   const main=clean((d.find(x=>String(x).startsWith('Principal:'))||'').replace(/^Principal:\s*/,''));
   const subs=d.filter(x=>!String(x).startsWith('Principal:')).map(clean);
-  const artDen=txt=>/adicional por VEL/i.test(txt)?200:/adicional por/i.test(txt)?20:/recebido|recebida|causado|contra/i.test(txt)?15:/Crít|Crit/i.test(txt)?15:20;
-  const artEff=Number((!Array.isArray(_arec)&&_arec.score)||0)||subs.reduce((a,t)=>{const m=t.match(/(-?\d+(?:[,.]\d+)?)%/);return a+(m?Math.floor(Math.abs(Number(String(m[1]).replace(',','.')))/artDen(t)*100+1e-9):0)},0);
+  const artDen=txt=>/adicional por VEL/i.test(txt)?200:/adicional por HP/i.test(txt)?1.5:/Dano Crítico recebido/i.test(txt)?60:/Dreno/i.test(txt)?40:/Dano Crítico|DANO CRÍT|HP inimigo|Habilidade [1-4]/i.test(txt)?30:/causado em|recebido de|sob incapacidade/i.test(txt)?25:20;
+  const artEff=Number((!Array.isArray(_arec)&&_arec.score)||0)||Math.round(subs.reduce((a,t)=>{const m=t.match(/(-?\d+(?:[,.]\d+)?)%/);return a+(m?Math.abs(Number(String(m[1]).replace(',','.')))/artDen(t):0)},0)*125);
   const mini=`<div class="rg-mini">`+(mold?`<img class="sw-artifact-mold" src="${mold}" alt="" style="position:absolute;width:62px;height:62px">`:'')+(body?`<img class="sw-artifact-body" src="${body}" alt="" style="position:absolute;width:48px;height:48px">`:'')+(sym?`<img class="sw-artifact-sym" src="${sym}" alt="" style="position:absolute;width:22px;height:22px">`:'')+`</div>`;
   const ex=e.clientX,ey=e.clientY;let x=ex+12,y=ey+12;
   const pp=document.createElement('div');pp.className='rpop art-game';
@@ -3243,17 +3243,22 @@ window.SW_LEADER_ICON_BY_MASTER={"14034":"leader_skill_HP_Guild.png","20512":"le
     return lines;
   }
   function dynArtifactScore(a){
-    // Pontuação exibida no jogo: soma do valor relativo de cada subpropriedade.
-    // Usa floor por linha para bater com o arredondamento visual do Summoners War.
+    // Fórmula de Artifact Score do jogo/comunidade:
+    // round( soma(valor / teto_da_família) * 125 ).
+    // Famílias: 4%-based=/20, 5%-based=/25, 6%-based=/30,
+    // Life Drain=/40, Crit Dmg recebido=/60, Add SPD=/200, Add HP=/1.5, Add ATK/DEF=/20.
     const den={
-      200:25,201:25,202:25,203:25,204:20,205:20,206:20,207:20,208:20,209:20,210:20,211:20,212:20,
-      213:25,214:20,215:20,216:20,217:20,
-      218:1,219:20,220:20,221:200,222:20,223:20,224:20,225:20,226:20,
-      300:25,301:25,302:25,303:25,304:25,305:25,306:25,307:25,308:25,309:25,
-      400:18,401:18,402:18,403:18,410:18,
-      404:20,405:20,406:20,407:20,408:20,409:20,411:18
+      // Lost HP / incapacidade e Dano Crítico: família 6%
+      200:30,201:30,202:30,203:30,222:30,223:30,224:30,225:30,400:30,401:30,402:30,403:30,410:30,411:30,
+      // Efeitos de buff, contra/coop/bomba/refletido/crushing, revive e skill acc/recovery: família 4%
+      204:20,205:20,206:20,207:20,208:20,209:20,210:20,211:20,212:20,216:20,217:20,226:20,404:20,405:20,406:20,407:20,408:20,409:20,
+      // Dano causado/recebido por elemento e recebido sob incapacidade: família 5%
+      213:25,300:25,301:25,302:25,303:25,304:25,305:25,306:25,307:25,308:25,309:25,
+      // Especiais
+      214:60,215:40,218:1.5,219:20,220:20,221:200
     };
-    return (a?.sec_effects||a?.sec_effect||[]).reduce((sum,p)=>{const code=Number(p?.[0]||0),value=Math.abs(Number(p?.[1]||0)),d=Number(den[code]||20);return sum+Math.floor(value/d*100+1e-9)},0)
+    const sum=(a?.sec_effects||a?.sec_effect||[]).reduce((acc,p)=>{const code=Number(p?.[0]||0),value=Math.abs(Number(p?.[1]||0)),d=Number(den[code]||25);return acc+(value/d)},0);
+    return Math.round(sum*125);
   }
   function unitClass(u){return Number(u?.class||u?.unit_class||u?.natural_stars||6)||6}
   function dynBaseStats(unit){return{hp:Number(unit?.con||0)*15,atk:Number(unit?.atk||0),def:Number(unit?.def||0),spd:Number(unit?.spd||0),cr:Number(unit?.critical_rate||0),cd:Number(unit?.critical_damage||0),res:Number(unit?.resist||0),acc:Number(unit?.accuracy||0)}}
@@ -3500,4 +3505,4 @@ document.addEventListener('click',e=>{
 })();
 </script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ee817b6fe7f197',t:'MTc4NDY4MTk5OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a260b4136baa4ae8',t:'MTc4NTg3OTQ0Nw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a260bf8c2b0a06c5',t:'MTc4NTg3OTkxNw=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>
