@@ -3316,6 +3316,30 @@ window.SW_LEADER_ICON_BY_MASTER={"14034":"leader_skill_HP_Guild.png","20512":"le
     6:['toa','🗼 Torre da Ascensão'],15:['toa','💡 Torre de Luz'],17:['toa','🌤️ Torre Celestial'],24:['cairos','⛰️ Cairos'],19:['pom','🦁 Besta/Rift'],20:['pom','🏰 Raid'],23:['chaos','🕯️ Templo do Caos'],25:['dim','🧚 Dimensão'],27:['dim','🔮 Assalto da Dimensão']
   };
   function ensureGroup(tile,label){let g=tile.groups.find(x=>x.label===label);if(!g){g={label,decks:[]};tile.groups.push(g)}return g}
+  function routeForDeck(d){
+    const type=Number(d?.deck_type||0),seq=Number(d?.deck_seq||0);
+    if(type===24){
+      const h=Math.floor(seq/100);
+      const cairos={1:'🏔️ Fortaleza do Gigante',2:'🐉 Covil do Dragão',3:'💀 Necrópole',4:'⚙️ Fortaleza de Aço',5:'⚖️ Cripta da Justiceira',6:'✨ Reino Espiritual'};
+      return ['cairos',cairos[h]||'⛰️ Cairos'];
+    }
+    if(type===27){
+      if(seq>=1000)return ['dim','🧚 Santuário das Fadas Sonhadoras'];
+      const fase=Math.floor(seq/100);return ['dim',`🔮 Assalto da Dimensão · Fase ${fase||1}`];
+    }
+    if(type===5)return ['guild','🌀 Labirinto · Normal'];
+    if(type===9)return ['guild','🌀 Labirinto · Resgate'];
+    if(type===10)return ['guild','🌀 Labirinto · Explosão'];
+    if(type===11)return ['guild','🌀 Labirinto · Chefe'];
+    if(type===26){
+      const h=Math.floor(seq/100);const labels={1:'🌀 Labirinto · Tempo de Cooldown',2:'🌀 Labirinto · Limite de Velocidade',3:'🌀 Labirinto · Limite de Tempo'};
+      return ['guild',labels[h]||'🌀 Labirinto · Limites'];
+    }
+    if(type===4)return ['guild','🐺 Subjugação · Água'];
+    if(type===7)return ['guild','🐺 Subjugação · Fogo'];
+    if(type===8)return ['guild','🐺 Subjugação · Vento'];
+    return TYPE_ROUTE[type]||['other',`Tipo ${type||'?'} · Presets`];
+  }
   function applyImportedJsonToSite(D){
     const tiles=cloneTiles(), by=tileById(tiles), indexes=buildIndexes(D||{});
     window.SW_RUNE_D={}; window.SW_REL_D=window.SW_REL_D||{};
@@ -3342,7 +3366,7 @@ window.SW_LEADER_ICON_BY_MASTER={"14034":"leader_skill_HP_Guild.png","20512":"le
     // Raid deck atual.
     if(D.raid_deck&&Array.isArray(D.raid_deck.unit_id_list))addDeckObject(ensureGroup(by.pom,'🏰 Raid · deck atual'),D,indexes,D.raid_deck,'Raid · deck carregado no jogo');
     // Presets genéricos por deck_type vindos do JSON.
-    (D.deck_list||[]).forEach(d=>{const route=TYPE_ROUTE[Number(d.deck_type)]||['other',`Tipo ${d.deck_type||'?'} · Presets`],tile=by[route[0]]||by.other,g=ensureGroup(tile,route[1]);addDeckObject(g,D,indexes,d,`${route[1].replace(/^[^A-Za-zÀ-ÿ0-9#]+/,'')} #${d.deck_seq||g.decks.length+1}`)});
+    (D.deck_list||[]).forEach(d=>{const route=routeForDeck(d),tile=by[route[0]]||by.other,g=ensureGroup(tile,route[1]);addDeckObject(g,D,indexes,d,`${route[1].replace(/^[^A-Za-zÀ-ÿ0-9#]+/,'')} #${d.deck_seq||g.decks.length+1}`)});
     // Remove grupos vazios, mas deixa um aviso onde não houver dados.
     for(const t of tiles){
       t.groups=t.groups.filter(g=>g.decks.length);
@@ -3463,4 +3487,4 @@ document.addEventListener('click',e=>{
 })();
 </script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ee817b6fe7f197',t:'MTc4NDY4MTk5OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a2604e9dcf966232',t:'MTc4NTg3NTI5MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>
+</body></html>
