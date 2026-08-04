@@ -3227,6 +3227,9 @@ const EQ = window.SW_EQUIP || {base:{}, runes:{}, artifacts:{}};
     return lines;
   }
   function unitClass(u){return Number(u?.class||u?.unit_class||u?.natural_stars||6)||6}
+  function dynBaseStats(unit){return{hp:Number(unit?.con||0)*15,atk:Number(unit?.atk||0),def:Number(unit?.def||0),spd:Number(unit?.spd||0),cr:Number(unit?.critical_rate||0),cd:Number(unit?.critical_damage||0),res:Number(unit?.resist||0),acc:Number(unit?.accuracy||0)}}
+  function dynMonsterName(id){try{if(typeof monsterName==='function')return monsterName(id)}catch(e){};try{if(typeof MONSTER_MEDIA!=='undefined'&&MONSTER_MEDIA[String(id)]?.[0])return MONSTER_MEDIA[String(id)][0]}catch(e){}return `Monstro #${id||'?'}`}
+  function dynMonsterImage(id){try{if(typeof monsterImage==='function')return monsterImage(id)}catch(e){};try{if(typeof MONSTER_MEDIA!=='undefined'&&MONSTER_MEDIA[String(id)]?.[1])return (typeof MONSTER_IMAGE_BASE!=='undefined'?MONSTER_IMAGE_BASE:'https://raw.githubusercontent.com/swarfarm/swarfarm/master/herders/static/herders/images/monsters/')+MONSTER_MEDIA[String(id)][1]}catch(e){}return ''}
   function buildIndexes(D){
     const runeIndex=new Map(),artifactIndex=new Map(),relicByUnit=new Map();
     (D.runes||[]).forEach(r=>runeIndex.set(String(r.rune_id),r));
@@ -3253,11 +3256,11 @@ const EQ = window.SW_EQUIP || {base:{}, runes:{}, artifacts:{}};
     if(!unit)return null;
     const equipped=opt.equipped||{runes:unit.runes||[],artifacts:unit.artifacts||[],relics:unit.relics||[]};
     const calcUnit={...unit,runes:equipped.runes||[],artifacts:equipped.artifacts||[],relics:equipped.relics||[]};
-    let st;try{st=(typeof rtaCalculateStats==='function')?rtaCalculateStats(calcUnit):{base:baseStats(unit),bonus:{},total:baseStats(unit)}}catch(e){const b=baseStats(unit);st={base:b,bonus:{},total:b}};
-    const bonus=st.bonus||{}, total=st.total||st.base||{}, base=st.base||baseStats(unit);
+    let st;try{st=(typeof rtaCalculateStats==='function')?rtaCalculateStats(calcUnit):{base:dynBaseStats(unit),bonus:{},total:dynBaseStats(unit)}}catch(e){const b=dynBaseStats(unit);st={base:b,bonus:{},total:b}};
+    const bonus=st.bonus||{}, total=st.total||st.base||{}, base=st.base||dynBaseStats(unit);
     const arts=(equipped.artifacts||[]).slice(0,2).map(a=>({el:a.attribute?({1:'fire',2:'water',3:'wind',4:'light',5:'dark'}[Number(a.attribute)]||''):'',arch:a.unit_style?({1:'attack',2:'defense',3:'hp',4:'support'}[Number(a.unit_style)]||''):'',r:Number(a.rank||a.natural_rank||5),d:dynArtifactDetail(a)}));
     const relic=(equipped.relics&&equipped.relics[0])||indexes?.relicByUnit?.get(Number(unit.unit_id));
-    return {m:Number(unit.unit_id),master:Number(unit.unit_master_id),n:typeof monsterName==='function'?monsterName(unit.unit_master_id):`#${unit.unit_master_id}`,icon:typeof monsterImage==='function'?monsterImage(unit.unit_master_id):'',stars:unitClass(unit),leader:!!opt.leader,fav:opt.fav||0,
+    return {m:Number(unit.unit_id),master:Number(unit.unit_master_id),n:dynMonsterName(unit.unit_master_id),icon:dynMonsterImage(unit.unit_master_id),stars:unitClass(unit),leader:!!opt.leader,fav:opt.fav||0,
       stats:{hp:[base.hp||0,bonus.hp||0],atk:[base.atk||0,bonus.atk||0],def:[base.def||0,bonus.def||0],spd:[base.spd||0,bonus.spd||0],cr:[total.cr||base.cr||0,null],cd:[total.cd||base.cd||0,null],res:[total.res||base.res||0,null],acc:[total.acc||base.acc||0,null]},
       runes:(equipped.runes||[]).map(r=>({set:Number(r.set_id),slot:Number(r.slot_no),up:Number(r.upgrade_curr||0),id:String(r.rune_id),d:dynRuneDetail(r)})),arts,
       relic:relic?{t:Number(relic.type||0),up:Number(relic.upgrade_curr||0),pe:relic.pri_effect||null,se:relic.sec_effect||null}:null};
@@ -3265,7 +3268,7 @@ const EQ = window.SW_EQUIP || {base:{}, runes:{}, artifacts:{}};
   function addDeck(group,name,units,opt={}){const clean=(units||[]).filter(Boolean);if(clean.length)group.decks.push({name,units:clean,dyn:!!opt.dyn,grid:!!opt.grid})}
   function addDeckObject(group,D,indexes,d,label){
     const ids=(d.unit_id_list||[]).map(x=>typeof x==='object'?Number(x.unit_id):Number(x)).filter(Boolean);
-    const units=ids.map(id=>{const u=indexes.unitById.get(id);return u?toCardUnit(u,indexes,{leader:Number(d.leader_unit_id)===id,equipped:equipForUnit(u,d.equip,indexes)}):null});
+    const units=ids.map(id=>{const u=indexes.unitById.get(id);if(!u)return null;try{return toCardUnit(u,indexes,{leader:Number(d.leader_unit_id)===id,equipped:equipForUnit(u,d.equip,indexes)})}catch(e){return {m:Number(u.unit_id),n:dynMonsterName(u.unit_master_id),icon:dynMonsterImage(u.unit_master_id),stars:Number(u.class||6),leader:Number(d.leader_unit_id)===id,stats:{hp:[0,0],atk:[0,0],def:[0,0],spd:[0,0],cr:[0],cd:[0],res:[0],acc:[0]},runes:[]}}});
     addDeck(group,label||`Preset #${d.deck_seq||group.decks.length+1}`,units);
   }
   const TYPE_ROUTE={
@@ -3278,7 +3281,7 @@ const EQ = window.SW_EQUIP || {base:{}, runes:{}, artifacts:{}};
     const tiles=cloneTiles(), by=tileById(tiles), indexes=buildIndexes(D||{});
     window.SW_RUNE_D={}; window.SW_REL_D=window.SW_REL_D||{};
     // Conta: todos os monstros sempre aparecem a partir do JSON importado.
-    addDeck(by.account.groups[0],'Todos os monstros da conta — clique numa foto',(D.unit_list||[]).map((u,i)=>{try{return toCardUnit(u,indexes,{fav:i+1})}catch(e){console.warn('card conta falhou:',e);return {m:Number(u.unit_id),n:(typeof monsterName==='function'?monsterName(u.unit_master_id):('#'+u.unit_master_id)),icon:(typeof monsterImage==='function'?monsterImage(u.unit_master_id):''),stars:Number(u.class||6),fav:i+1,stats:{hp:[0,0],atk:[0,0],def:[0,0],spd:[0,0],cr:[0],cd:[0],res:[0],acc:[0]},runes:[]}}}),{grid:true,dyn:true});
+    addDeck(by.account.groups[0],'Todos os monstros da conta — clique numa foto',(D.unit_list||[]).map((u,i)=>{try{return toCardUnit(u,indexes,{fav:i+1})}catch(e){console.warn('card conta falhou:',e);return {m:Number(u.unit_id),n:dynMonsterName(u.unit_master_id),icon:dynMonsterImage(u.unit_master_id),stars:Number(u.class||6),fav:i+1,stats:{hp:[0,0],atk:[0,0],def:[0,0],spd:[0,0],cr:[0],cd:[0],res:[0],acc:[0]},runes:[]}}}),{grid:true,dyn:true});
     // Arena Mundial: favoritos/equipamentos RTA do próprio JSON; se não houver favoritos, mostra todos os monstros da conta.
     let rtaUnits=[];
     try{
@@ -3290,7 +3293,7 @@ const EQ = window.SW_EQUIP || {base:{}, runes:{}, artifacts:{}};
       else{const fav=(D.favorite_unit_list||[]).find(item=>Number(item.type)===1),groups=fav?.unit_id_list||[];ids=groups.flatMap(g=>g||[]).map(Number)}
       if(ids.length){let order=0;rtaUnits=ids.map(id=>{const u=indexes.unitById.get(Number(id));if(!u)return null;order++;const r=runeLinks.has(Number(id))?runeLinks.get(Number(id)):(u.runes||[]),a=artifactLinks.has(Number(id))?artifactLinks.get(Number(id)):(u.artifacts||[]);return toCardUnit(u,indexes,{fav:order,equipped:{runes:r,artifacts:a,relics:u.relics||[]}})}).filter(Boolean)}
     }catch(e){console.warn(e)}
-    if(!rtaUnits.length)rtaUnits=(D.unit_list||[]).map((u,i)=>toCardUnit(u,indexes,{fav:i+1}));
+    if(!rtaUnits.length)rtaUnits=(D.unit_list||[]).map((u,i)=>{try{return toCardUnit(u,indexes,{fav:i+1})}catch(e){return {m:Number(u.unit_id),n:dynMonsterName(u.unit_master_id),icon:dynMonsterImage(u.unit_master_id),stars:Number(u.class||6),fav:i+1,stats:{hp:[0,0],atk:[0,0],def:[0,0],spd:[0,0],cr:[0],cd:[0],res:[0],acc:[0]},runes:[]}}});
     addDeck(by.wm.groups[0],`Pool RTA / conta (${rtaUnits.length} monstros) — clique numa foto`,rtaUnits,{grid:true,dyn:true});
     // Arena defesas.
     if(D.defense_deck_info)addDeckObject(ensureGroup(by.arena,'🛡️ Arena · Defesa Normal'),D,indexes,D.defense_deck_info,'Arena · Defesa Normal');
@@ -3421,4 +3424,4 @@ document.addEventListener('click',e=>{
 })();
 </script>
 <script>(function(){function c(){var b=a.contentDocument||a.contentWindow.document;if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a1ee817b6fe7f197',t:'MTc4NDY4MTk5OA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script><script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v4513226cdae34746b4dedf0b4dfa099e1781791509496" integrity="sha512-ZE9pZaUXND66v380QUtch/5sE9tPFh2zg45pR2PB0CVkCtOREv2AJKkSidISWkysEuQ0EH8faUU5du78bx87UQ==" data-cf-beacon='{"version":"2024.11.0","token":"1954b47c125f43f8b4338b3c4f804e4f","server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a26018bafa999a86',t:'MTc4NTg3MzA4NA=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>
+<script>(function(){function c(){var b=a.contentDocument||(a.contentWindow&&a.contentWindow.document);if(b){var d=b.createElement('script');d.innerHTML="window.__CF$cv$params={r:'a260249dac78dc0c',t:'MTc4NTg3MzU3MQ=='};var a=document.createElement('script');a.src='/cdn-cgi/challenge-platform/scripts/jsd/main.js';document.getElementsByTagName('head')[0].appendChild(a);";b.getElementsByTagName('head')[0].appendChild(d)}}if(document.body){var a=document.createElement('iframe');a.height=1;a.width=1;a.style.position='absolute';a.style.top=0;a.style.left=0;a.style.border='none';a.style.visibility='hidden';document.body.appendChild(a);if('loading'!==document.readyState)c();else if(window.addEventListener)document.addEventListener('DOMContentLoaded',c);else{var e=document.onreadystatechange||function(){};document.onreadystatechange=function(b){e(b);'loading'!==document.readyState&&(document.onreadystatechange=e,c())}}}})();</script></body></html>
