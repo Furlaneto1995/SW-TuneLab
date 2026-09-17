@@ -1604,7 +1604,7 @@ function spdPreflight(runes,target,measuredBase,baseSpd,bonusPossible,slot2Polic
   const result={feasible:true,forced:false,floorPerRune:0,keep:new Set(),dropped:0,bestWithout,bestWith};
   const reach=value=>value>=target-0.999;
   if(slot2Policy==='spd'){result.forced=true;if(pri2<0){result.feasible=false;return result}result.floorPerRune=(target-measuredBase-pri2)/5;
-    runes.forEach((rune,index)=>{const slot=Number(rune.slot_no),s=spd[index];if(reach(measuredBase+(slot===2?s:pri2+s+(side-max[slot]))+bonus))result.keep.add(index)})}
+    runes.forEach((rune,index)=>{const slot=Number(rune.slot_no),s=spd[index];if(reach(measuredBase+(slot===2?s+side:pri2+s+(side-max[slot]))+bonus))result.keep.add(index)})}
   else if(slot2Policy==='other'){runes.forEach((rune,index)=>{const slot=Number(rune.slot_no),s=spd[index];if(reach(measuredBase+s+(slot===2?side:side-max[slot]+Math.max(alt2,0))+bonus))result.keep.add(index)})}
   else{if(!reach(bestWithout)&&!reach(bestWith)){result.feasible=false;return result}
     if(!reach(bestWithout)){result.forced=true;result.floorPerRune=pri2>=0?(target-measuredBase-pri2)/5:0;
@@ -1858,8 +1858,10 @@ function leanModel(data,B,scoreSpd){
   const binaries=[];for(let b=0;b<B;b++){for(let i=0;i<runes.length;i++)binaries.push(x(b,i));for(const id of ruleIds){binaries.push(cand(b,id));binaries.push(w(b,id))}}
   addNameList(lines,'Binary',binaries);lines.push('End');
   return{lp:lines.join('\n'),runes,B}}
+let greedyTaken=null;
 function greedyBuilds(data){
   try{
+  greedyTaken=null;
   if(data.rules.reduce((s,r)=>s+Number(r.pieces||0),0)!==6)return 0;
   const data2={...data,runes:data.runes.map(r=>({...r,vec:vector(r,data)}))};
   const rulesKey=Object.keys(data.minimum).concat(Object.keys(data.maximum));
@@ -1886,6 +1888,7 @@ function greedyBuilds(data){
   for(const r of data2.runes){const setKey=r.set_id===25?'I':String(r.set_id),k=setKey+':'+r.slot_no;if(!pools.has(k))pools.set(k,[]);pools.get(k).push(r)}
   for(const [k,l] of pools)l.sort((a,b)=>(a.vec?.[key]||0)-(b.vec?.[key]||0));
   let count=0;
+  const takenIds=[];
   while(true){
     let best=null;
     for(const P of PATS){
@@ -1904,10 +1907,10 @@ function greedyBuilds(data){
     for(let i=best.lists.length-1;i>=0;i--){const vals=[...new Set(best.lists[i].map(r=>r.vec?.[key]||0))].sort((a,b)=>a-b);
       for(const v of vals){if(v<=s0&&best.hist[i][s0-v]){const idx=best.lists[i].findIndex(r=>(r.vec?.[key]||0)===v);taken.push(best.lists[i][idx]);best.lists[i].splice(idx,1);s0-=v;break}}}
     if(s0!==0)break;
-    count++;for(const r of taken){const setKey=r.set_id===25?'I':String(r.set_id);const lst=pools.get(setKey+':'+r.slot_no);const idx=lst.indexOf(r);if(idx>=0)lst.splice(idx,1)}
+    count++;takenIds.push(taken.map(r=>String(r.rune_id)));for(const r of taken){const setKey=r.set_id===25?'I':String(r.set_id);const lst=pools.get(setKey+':'+r.slot_no);const idx=lst.indexOf(r);if(idx>=0)lst.splice(idx,1)}
     if(count>70)break;
   }
-  return count}catch(e){if(typeof console==='undefined')return 0;return 0}
+  greedyTaken=takenIds;return count}catch(e){if(typeof console==='undefined')return 0;return 0}
 }
 async function solveCapacity(data){
   const tlog=t=>postMessage({type:'milp_progress',text:t});
@@ -1926,6 +1929,23 @@ async function solveCapacity(data){
   const extract=(cols,model,B)=>{const chosen=[];for(let b=0;b<B;b++){const ids=[];for(let i=0;i<model.runes.length;i++)if(Number(cols['x_'+b+'_'+i]?.Primal||0)>.5)ids.push(String(model.runes[i].rune_id));if(ids.length!==6)return null;chosen.push({ids,wildcardFor:0})}return chosen};
   const tryB=(B,tl)=>{const model=leanModel(data,B,false);const sol=highs.solve(model.lp,{presolve:'on',time_limit:tl,mip_rel_gap:0});if(sol.Status==='Infeasible')return{ok:false,proven:true,model};const chosen=sol.Columns?extract(sol.Columns,model,B):null;if(chosen)return{ok:true,proven:true,chosen,model,status:sol.Status};return{ok:false,proven:false,status:sol.Status,model}};
   let lb=greedy||0,ub=UB,best=null,pending=[];
+  if(greedy>0&&greedyTaken&&greedyTaken.length){
+    const byId=new Map(runes.map(r=>[String(r.rune_id),r])),validTake=[];
+    for(const ids of greedyTaken){
+      if(!Array.isArray(ids)||ids.length!==6)break;
+      const brs=ids.map(id=>byId.get(String(id)));
+      if(brs.some(r=>!r))break;
+      if(brs.filter(r=>Number(r.set_id)===25).length>1)continue;
+      let okMin=true;
+      for(const k of Object.keys(data.minimum||{})){
+        const need=Number(data.minimum[k]||0);if(!need)continue;
+        if(brs.reduce((s,r)=>s+Number(r.vec?.[k]||0),0)+0.999<need){okMin=false;break}
+      }
+      if(!okMin)continue;
+      validTake.push({ids:ids.map(String),wildcardFor:0});
+    }
+    if(validTake.length){best=validTake;lb=validTake.length}
+  }
   while(lb<ub&&Date.now()<deadline){
     let mid=(lb+ub+1)>>1;while(pending.includes(mid)&&mid>lb)mid--;
     if(mid<=lb)break;
@@ -1951,7 +1971,7 @@ async function solveCapacity(data){
     const better=sol.Columns?extract(sol.Columns,model,lb):null;
     if(better)best=better;
   }
-  if(!best){postMessage({type:'error',message:'HiGHS não encontrou nenhuma build viável no tempo limite. Tente o modo Completa.'});return}
+  if(!best){if(pending.length){postMessage({type:'error',message:'Tempo limite excedido antes de confirmar uma solução. Tente o modo Turbo (pool menor = mais rápido).'});return}postMessage({type:'error',message:'Nenhuma build viável com estes filtros. Afrouxe as metas/mains ou tente o modo Completa (pool maior).'});return}
   const exact=!pending.filter(v=>v>lb).length&&lb>0;
   postMessage({type:'milp_done',status:exact?'Optimal':'Tempo limite (mínimo garantido)',proven:exact,chosen:best,theoretical:UB,heuristic:greedy});
 }
@@ -1989,7 +2009,7 @@ function preflight(elig,runes,mon,mainMax,grindMax){
   const main2=mon.main?.[2]||[],policy=main2.length?(main2.includes(8)?'spd':'other'):'open';
   const reach=value=>value>=T-0.999,keep=new Set();let forced=false;
   if(policy==='other'){for(const i of elig){const slot=Number(runes[i].slot_no),s=spd[i];if(reach(measuredBase+s+(slot===2?side:side-max[slot]+Math.max(alt2,0))+bonus))keep.add(i)}}
-  else if(policy==='spd'){forced=true;if(pri2<0)return{keep,feasible:false,forced};for(const i of elig){const slot=Number(runes[i].slot_no),s=spd[i];if(reach(measuredBase+(slot===2?s:pri2+s+(side-max[slot]))+bonus))keep.add(i)}}
+  else if(policy==='spd'){forced=true;if(pri2<0)return{keep,feasible:false,forced};for(const i of elig){const slot=Number(runes[i].slot_no),s=spd[i];if(reach(measuredBase+(slot===2?s+side:pri2+s+(side-max[slot]))+bonus))keep.add(i)}}
   else{const bestWithout=measuredBase+Math.max(alt2,0)+side+bonus,bestWith=pri2>=0?measuredBase+pri2+side+bonus:-1e9;
     if(!reach(bestWithout)&&!reach(bestWith))return{keep,feasible:false,forced:false};
     if(!reach(bestWithout)&&pri2<0)return{keep,feasible:false,forced:false};
@@ -2168,13 +2188,18 @@ function runCapacityAnalyzer(){try{const j=$('highsJsSource')?.textContent,w=$('
 
 function runCapacityMILP(){if(capacityWorker){notify('Já existe uma análise em andamento.');return}if(!allRunes.length){$('capacityStatus').textContent='Importe um JSON com runas primeiro.';return}const rules=capacityRules(),config=capacityTargets(),pieceCost=rules.reduce((sum,rule)=>sum+rule.pieces,0);if(pieceCost>6){$('capacityStatus').textContent='Os conjuntos selecionados ocupam mais de seis peças.';return}const jsSource=$('highsJsSource')?.textContent,wasmBase64=$('highsWasmSource')?.textContent.trim();if(!jsSource||!wasmBase64){$('capacityStatus').textContent='Solver HiGHS não foi incorporado corretamente.';return}const workerBlob=new Blob([jsSource+'\n'+HIGHS_CAPACITY_WORKER_SOURCE],{type:'text/javascript'}),workerUrl=URL.createObjectURL(workerBlob);capacityWorker=new Worker(workerUrl);URL.revokeObjectURL(workerUrl);$('runCapacityBtn').disabled=true;$('capacityCancelBtn').classList.remove('hidden');$('capacityResults').innerHTML='';setCapacityProgress(4,'Inicializando HiGHS WebAssembly...');const runeMap=new Map(allRunes.map(rune=>[String(rune.rune_id),rune]));capacityWorker.onmessage=event=>{const message=event.data||{};if(message.type==='milp_progress'){setCapacityProgress(35,message.text);return}if(message.type==='error'){stopCapacityWorker(message.message||'Erro no solver MILP.');return}if(message.type==='milp_done'){const chosen=(message.chosen||[]).map(entry=>{const ids=Array.isArray(entry)?entry:(entry.ids||[]),runes=ids.map(id=>runeMap.get(String(id))).filter(Boolean),wildcardFor=Number(entry.wildcardFor||0)||chooseCapacityWildcard(runes,rules,config),unit=capacityPseudoUnit(),stats=buildStats(runes,unit,wildcardFor);return{runes,stats,wildcardFor,score:genericScore(stats)}}).sort((a,b)=>b.stats.additional.spd-a.stats.additional.spd),solution={chosen,theoretical:message.theoretical,proven:message.status==='Optimal'};renderCapacitySolution(solution,{rules});setCapacityProgress(100,'Modelo MILP resolvido pelo HiGHS.');$('capacityStatus').innerHTML=`<strong>${solution.proven?'Máximo EXATO confirmado':'Mínimo garantido encontrado'}: ${chosen.length} builds</strong><small>HiGHS · ${message.status} · nenhuma runa repetida</small>`;capacityWorker.terminate();capacityWorker=null;$('runCapacityBtn').disabled=false;$('capacityCancelBtn').classList.add('hidden');setTimeout(()=>$('capacityProgress').classList.remove('show'),1200)}};capacityWorker.onerror=error=>{console.error(error);stopCapacityWorker('Erro no Web Worker do HiGHS.')};const cfgMILP = capacityDepthConfig();
 const base={hp:AVERAGE_LEVEL40.hp,atk:AVERAGE_LEVEL40.atk,def:AVERAGE_LEVEL40.def,spd:AVERAGE_LEVEL40.spd,cr:AVERAGE_LEVEL40.cr,cd:AVERAGE_LEVEL40.cd,res:AVERAGE_LEVEL40.res,acc:AVERAGE_LEVEL40.acc},ultraPoolRaw=capacityRunePool().filter(rune=>[1,2,3,4,5,6].includes(Number(rune.slot_no))),poolBySlotUltra={1:[],2:[],3:[],4:[],5:[],6:[]};
-for(const r of ultraPoolRaw) poolBySlotUltra[Number(r.slot_no)].push(r);
+// ===== v7.13: filtros de set/main ANTES do corte top-N (corte cego descartava runas validas) =====
+let preTopPool=ultraPoolRaw.filter(rune=>{const req=capacityMainSelections[Number(rune.slot_no)];return!req||!req.length||req.includes(Number(rune.pri_eff?.[0]||0))});
+if(pieceCost===6){const allowPre=new Set(rules.map(r=>Number(r.id)));preTopPool=preTopPool.filter(r=>allowPre.has(Number(r.set_id))||Number(r.set_id)===25)}
+const spdTargetPre=Number(config.minimum?.spd||0),mmPre=capacityFlag('capMainMax'),gmPre=capacityFlag('capGrindMax');
+for(const r of preTopPool) poolBySlotUltra[Number(r.slot_no)].push(r);
 let ultraFiltered=[];
 for(let s=1;s<=6;s++){
   let list=poolBySlotUltra[s].slice();
   list.sort((a,b)=>{
     const av=(Number(a.prefix_eff?.[1]||0)+Number(a.prefix_eff?.[3]||0)+(a.sec_eff||[]).reduce((sum,p)=>sum+Number(p?.[1]||0)+Number(p?.[3]||0),0)+Number(a.upgrade_curr||0)*2);
     const bv=(Number(b.prefix_eff?.[1]||0)+Number(b.prefix_eff?.[3]||0)+(b.sec_eff||[]).reduce((sum,p)=>sum+Number(p?.[1]||0)+Number(p?.[3]||0),0)+Number(b.upgrade_curr||0)*2);
+    if(spdTargetPre>0){const dormA=runeSpdValueSim(a,mmPre,gmPre),dormB=runeSpdValueSim(b,mmPre,gmPre);if(dormB!==dormA)return dormB-dormA}
     return bv-av;
   });
   if(cfgMILP.capTopPerSlot>0) list=list.slice(0,cfgMILP.capTopPerSlot);
